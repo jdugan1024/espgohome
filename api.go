@@ -20,7 +20,7 @@ type ESPHomeConnection struct {
 	ClientInfo string
 	conn       net.Conn
 	reader     *bufio.Reader
-	receivers  map[chan proto.Message]map[uint64]bool
+	receivers  map[chan proto.Message]map[MessageID]bool
 }
 
 func (c *ESPHomeConnection) Dial() error {
@@ -38,7 +38,7 @@ func (c *ESPHomeConnection) Dial() error {
 	return nil
 }
 
-func (c *ESPHomeConnection) sendMessage(m proto.Message, msgType uint64) error {
+func (c *ESPHomeConnection) sendMessage(m proto.Message, msgType MessageID) error {
 	b, err := proto.Marshal(m)
 	if err != nil {
 		return err
@@ -78,11 +78,12 @@ func (c *ESPHomeConnection) receiveLoop() {
 			log.Printf("unable to decode size: %s", err)
 			continue
 		}
-		msgType, err := binary.ReadUvarint(c.reader)
+		msgTypeRaw, err := binary.ReadUvarint(c.reader)
 		if err != nil {
 			log.Printf("unable to decode message type: %s", err)
 			continue
 		}
+		msgType := MessageID(msgTypeRaw)
 
 		respBytes := make([]byte, size)
 		n, err := c.reader.Read(respBytes)
@@ -103,38 +104,38 @@ func (c *ESPHomeConnection) receiveLoop() {
 }
 
 // TODO: generate this?
-func (c *ESPHomeConnection) decodeMessage(raw []byte, msgType uint64) (proto.Message, error) {
+func (c *ESPHomeConnection) decodeMessage(raw []byte, msgType MessageID) (proto.Message, error) {
 	log.Printf("decode %d", msgType)
 	switch msgType {
-	case HelloResponse_ID:
+	case HelloResponseID:
 		resp := &HelloResponse{}
 		err := proto.Unmarshal(raw, resp)
 		return resp, err
-	case ConnectResponse_ID:
+	case ConnectResponseID:
 		resp := &ConnectResponse{}
 		err := proto.Unmarshal(raw, resp)
 		return resp, err
-	case DeviceInfoResponse_ID:
+	case DeviceInfoResponseID:
 		resp := &DeviceInfoResponse{}
 		err := proto.Unmarshal(raw, resp)
 		return resp, err
-	case ListEntitiesDoneResponse_ID:
+	case ListEntitiesDoneResponseID:
 		resp := &ListEntitiesDoneResponse{}
 		err := proto.Unmarshal(raw, resp)
 		return resp, err
-	case ListEntitiesSwitchResponse_ID:
+	case ListEntitiesSwitchResponseID:
 		resp := &ListEntitiesSwitchResponse{}
 		err := proto.Unmarshal(raw, resp)
 		return resp, err
-	case ListEntitiesBinarySensorResponse_ID:
+	case ListEntitiesBinarySensorResponseID:
 		resp := &ListEntitiesBinarySensorResponse{}
 		err := proto.Unmarshal(raw, resp)
 		return resp, err
-	case PingResponse_ID:
+	case PingResponseID:
 		resp := &PingResponse{}
 		err := proto.Unmarshal(raw, resp)
 		return resp, err
-	case DisconnectResponse_ID:
+	case DisconnectResponseID:
 		resp := &DisconnectResponse{}
 		err := proto.Unmarshal(raw, resp)
 		return resp, err
@@ -144,15 +145,15 @@ func (c *ESPHomeConnection) decodeMessage(raw []byte, msgType uint64) (proto.Mes
 	}
 }
 
-func (c *ESPHomeConnection) AddReceiver(r chan proto.Message, filters []uint64) {
+func (c *ESPHomeConnection) AddReceiver(r chan proto.Message, filters ...MessageID) {
 	if c.receivers == nil {
 		fmt.Printf("making da map")
-		c.receivers = make(map[chan proto.Message]map[uint64]bool)
+		c.receivers = make(map[chan proto.Message]map[MessageID]bool)
 	}
 	// warn if changing filter?
 	for _, f := range filters {
 		if c.receivers[r] == nil {
-			c.receivers[r] = make(map[uint64]bool)
+			c.receivers[r] = make(map[MessageID]bool)
 		}
 		c.receivers[r][f] = true
 	}
@@ -162,16 +163,16 @@ func (c *ESPHomeConnection) RemoveReceiver(r chan proto.Message) {
 	delete(c.receivers, r)
 }
 
-func (c *ESPHomeConnection) sendMessageGetResponse(m proto.Message, msgType, respType uint64) chan proto.Message {
+func (c *ESPHomeConnection) sendMessageGetResponse(m proto.Message, msgType MessageID, respTypes ...MessageID) chan proto.Message {
 	r := make(chan proto.Message)
-	c.AddReceiver(r, []uint64{respType})
+	c.AddReceiver(r, respTypes...)
 	c.sendMessage(m, msgType)
 	return r
 }
 
 func (c *ESPHomeConnection) Hello() error {
 	req := HelloRequest{ClientInfo: c.ClientInfo}
-	receiver := c.sendMessageGetResponse(&req, HelloRequest_ID, HelloResponse_ID)
+	receiver := c.sendMessageGetResponse(&req, HelloRequestID, HelloResponseID)
 	resp := (<-receiver).(*HelloResponse)
 	defer c.RemoveReceiver(receiver)
 
@@ -187,7 +188,7 @@ func (c *ESPHomeConnection) Hello() error {
 
 func (c *ESPHomeConnection) Connect() error {
 	req := ConnectRequest{Password: c.Password}
-	receiver := c.sendMessageGetResponse(&req, ConnectRequest_ID, ConnectResponse_ID)
+	receiver := c.sendMessageGetResponse(&req, ConnectRequestID, ConnectResponseID)
 	resp := (<-receiver).(*ConnectResponse)
 	defer c.RemoveReceiver(receiver)
 
@@ -203,7 +204,7 @@ func (c *ESPHomeConnection) Connect() error {
 
 func (c *ESPHomeConnection) Disconnect() error {
 	req := DisconnectRequest{}
-	receiver := c.sendMessageGetResponse(&req, DisconnectRequest_ID, DisconnectResponse_ID)
+	receiver := c.sendMessageGetResponse(&req, DisconnectRequestID, DisconnectResponseID)
 	resp := (<-receiver).(*DisconnectResponse)
 	defer c.RemoveReceiver(receiver)
 
@@ -221,7 +222,7 @@ func (c *ESPHomeConnection) Disconnect() error {
 
 func (c *ESPHomeConnection) DeviceInfo() error {
 	req := DeviceInfoRequest{}
-	receiver := c.sendMessageGetResponse(&req, DeviceInfoRequest_ID, DeviceInfoResponse_ID)
+	receiver := c.sendMessageGetResponse(&req, DeviceInfoRequestID, DeviceInfoResponseID)
 	resp := (<-receiver).(*DeviceInfoResponse)
 	defer c.RemoveReceiver(receiver)
 
@@ -271,7 +272,7 @@ func (c *ESPHomeConnection) decodeListEntitesBinarySensor(respBytes []byte) erro
 
 // func (c *ESPHomeConnection) ListEntities() error {
 // 	req := ListEntitiesRequest{}
-// 	c.sendMessage(&req, ListEntitiesRequest_ID)
+// 	c.sendMessage(&req, ListEntitiesRequestID)
 
 // 	for done := false; done != true; {
 // 		respBytes, msgType, err := c.receiveMessage()
@@ -280,11 +281,11 @@ func (c *ESPHomeConnection) decodeListEntitesBinarySensor(respBytes []byte) erro
 // 		}
 
 // 		switch msgType {
-// 		case ListEntitiesDoneResponse_ID:
+// 		case ListEntitiesDoneResponseID:
 // 			done = true
-// 		case ListEntitiesSwitchResponse_ID:
+// 		case ListEntitiesSwitchResponseID:
 // 			c.decodeListEntitesSwitchResponse(respBytes)
-// 		case ListEntitiesBinarySensorResponse_ID:
+// 		case ListEntitiesBinarySensorResponseID:
 // 			c.decodeListEntitesBinarySensor(respBytes)
 // 		default:
 // 			log.Printf("unsupported entity: %d\n", msgType)
@@ -298,7 +299,7 @@ func (c *ESPHomeConnection) SwitchCommand(key uint32, state bool) error {
 	log.Printf("Switch %d %t\n", key, state)
 
 	req := SwitchCommandRequest{Key: key, State: state}
-	err := c.sendMessage(&req, SwitchCommandRequest_ID)
+	err := c.sendMessage(&req, SwitchCommandRequestID)
 	if err != nil {
 		log.Printf("ERR: %s", err)
 	}
@@ -308,7 +309,7 @@ func (c *ESPHomeConnection) SwitchCommand(key uint32, state bool) error {
 
 func (c *ESPHomeConnection) Ping() error {
 	req := PingRequest{}
-	receiver := c.sendMessageGetResponse(&req, PingRequest_ID, PingResponse_ID)
+	receiver := c.sendMessageGetResponse(&req, PingRequestID, PingResponseID)
 	resp := (<-receiver).(*PingResponse)
 	defer c.RemoveReceiver(receiver)
 
