@@ -21,6 +21,7 @@ type ESPHomeConnection struct {
 	conn       net.Conn
 	reader     *bufio.Reader
 	receivers  map[chan proto.Message]map[MessageID]bool
+	closed bool
 }
 
 func (c *ESPHomeConnection) Dial() error {
@@ -33,6 +34,7 @@ func (c *ESPHomeConnection) Dial() error {
 	conn, err := net.Dial("tcp", connstr)
 	c.conn = conn
 	c.reader = bufio.NewReader(conn)
+	c.closed = false
 	go c.receiveLoop()
 
 	return nil
@@ -62,10 +64,12 @@ func (c *ESPHomeConnection) sendMessage(m proto.Message, msgType MessageID) erro
 }
 
 func (c *ESPHomeConnection) receiveLoop() {
-	// TODO: handle shutdown probably via a shutdown channel
 	for {
 		preamble, err := c.reader.ReadByte()
 		if err != nil {
+			if c.closed {
+				break
+			}
 			log.Printf("Unable to read preamble: %s", err)
 			continue
 		}
@@ -207,6 +211,8 @@ func (c *ESPHomeConnection) Disconnect() error {
 	receiver := c.sendMessageGetResponse(&req, DisconnectRequestID, DisconnectResponseID)
 	resp := (<-receiver).(*DisconnectResponse)
 	defer c.RemoveReceiver(receiver)
+
+	c.closed = true
 
 	j, err := protojson.Marshal(resp)
 	if err != nil {
