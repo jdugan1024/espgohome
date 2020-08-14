@@ -96,7 +96,7 @@ func (c *ESPHomeConnection) receiveLoop() {
 			continue
 		}
 
-		resp, err := c.decodeMessage(respBytes, msgType)
+		resp, err := decodeMessage(respBytes, msgType)
 
 		for r, filter := range c.receivers {
 			ok := filter[msgType]
@@ -104,48 +104,6 @@ func (c *ESPHomeConnection) receiveLoop() {
 				r <- resp
 			}
 		}
-	}
-}
-
-// TODO: generate this?
-func (c *ESPHomeConnection) decodeMessage(raw []byte, msgType MessageID) (proto.Message, error) {
-	log.Printf("decode %d", msgType)
-	switch msgType {
-	case HelloResponseID:
-		resp := &HelloResponse{}
-		err := proto.Unmarshal(raw, resp)
-		return resp, err
-	case ConnectResponseID:
-		resp := &ConnectResponse{}
-		err := proto.Unmarshal(raw, resp)
-		return resp, err
-	case DeviceInfoResponseID:
-		resp := &DeviceInfoResponse{}
-		err := proto.Unmarshal(raw, resp)
-		return resp, err
-	case ListEntitiesDoneResponseID:
-		resp := &ListEntitiesDoneResponse{}
-		err := proto.Unmarshal(raw, resp)
-		return resp, err
-	case ListEntitiesSwitchResponseID:
-		resp := &ListEntitiesSwitchResponse{}
-		err := proto.Unmarshal(raw, resp)
-		return resp, err
-	case ListEntitiesBinarySensorResponseID:
-		resp := &ListEntitiesBinarySensorResponse{}
-		err := proto.Unmarshal(raw, resp)
-		return resp, err
-	case PingResponseID:
-		resp := &PingResponse{}
-		err := proto.Unmarshal(raw, resp)
-		return resp, err
-	case DisconnectResponseID:
-		resp := &DisconnectResponse{}
-		err := proto.Unmarshal(raw, resp)
-		return resp, err
-	default:
-		err := fmt.Errorf("unsupported message: %d", msgType)
-		return nil, err
 	}
 }
 
