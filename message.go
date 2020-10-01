@@ -1,10 +1,15 @@
 package espgohome
 
-import "fmt"
-import "google.golang.org/protobuf/proto"
+import (
+	"fmt"
+
+	"google.golang.org/protobuf/proto"
+)
+
+// MessageID is an enum of all the known messages types
+type MessageID uint64
 
 //go:generate stringer -type=MessageID
-type MessageID uint64
 
 const (
 	HelloRequestID                          MessageID = 1
